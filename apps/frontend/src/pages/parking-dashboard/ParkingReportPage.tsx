@@ -10,10 +10,13 @@ import { ParkingCircle, Car } from 'lucide-react';
 import { RevenueBreakdownCard } from './components/RevenueBreakdownCard';
 import { RevenueVehicleLineChart } from './components/RevenueVehicleLineChart';
 import { YearRangeControl } from './components/YearRangeControl';
+import { TenantMultiSelect } from './components/TenantMultiSelect';
 
 export default function ParkingReportPage() {
   const { t } = useTranslation('parking');
-  const [parkingCode, setParkingCode] = useState('');
+  const [parkingCodes, setParkingCodes] = useState<string[]>([]);
+  // Stable query-key segment; also the "something selected" flag.
+  const codesKey = parkingCodes.join(',');
   const currentYear = new Date().getFullYear();
   const [fromYear, setFromYear] = useState(currentYear - 2);
   const [toYear, setToYear] = useState(currentYear);
@@ -25,8 +28,8 @@ export default function ParkingReportPage() {
   });
   const tenants: { parkingCode: string; name: string }[] = tenantsRes?.data ?? tenantsRes ?? [];
   useEffect(() => {
-    if (!parkingCode && tenants.length > 0) setParkingCode(tenants[0].parkingCode);
-  }, [tenants, parkingCode]);
+    if (parkingCodes.length === 0 && tenants.length > 0) setParkingCodes([tenants[0].parkingCode]);
+  }, [tenants, parkingCodes]);
 
   const {
     data: summaryRes,
@@ -34,9 +37,9 @@ export default function ParkingReportPage() {
     isError: summaryError,
     refetch: refetchSummary,
   } = useQuery({
-    queryKey: ['parking-monthly-summary', parkingCode],
-    queryFn: () => parkingDashboardApi.getMonthlySummary(parkingCode),
-    enabled: !!parkingCode,
+    queryKey: ['parking-monthly-summary', codesKey],
+    queryFn: () => parkingDashboardApi.getMonthlySummary(parkingCodes),
+    enabled: parkingCodes.length > 0,
   });
   const summary = summaryRes?.data ?? summaryRes;
 
@@ -46,9 +49,9 @@ export default function ParkingReportPage() {
     isError: monthlyChartError,
     refetch: refetchMonthlyChart,
   } = useQuery({
-    queryKey: ['parking-daily-chart', parkingCode, currentYear, month],
-    queryFn: () => parkingDashboardApi.getRevenueVehicleChartByDay(parkingCode, currentYear, month),
-    enabled: !!parkingCode,
+    queryKey: ['parking-daily-chart', codesKey, currentYear, month],
+    queryFn: () => parkingDashboardApi.getRevenueVehicleChartByDay(parkingCodes, currentYear, month),
+    enabled: parkingCodes.length > 0,
   });
   const monthlyChartData = monthlyChartRes?.data ?? monthlyChartRes ?? [];
 
@@ -58,9 +61,9 @@ export default function ParkingReportPage() {
     isError: yearlyChartError,
     refetch: refetchYearlyChart,
   } = useQuery({
-    queryKey: ['parking-yearly-chart', parkingCode, fromYear, toYear],
-    queryFn: () => parkingDashboardApi.getRevenueVehicleChartByYear(parkingCode, fromYear, toYear),
-    enabled: !!parkingCode,
+    queryKey: ['parking-yearly-chart', codesKey, fromYear, toYear],
+    queryFn: () => parkingDashboardApi.getRevenueVehicleChartByYear(parkingCodes, fromYear, toYear),
+    enabled: parkingCodes.length > 0,
   });
   const yearlyChartData = yearlyChartRes?.data ?? yearlyChartRes ?? [];
 
@@ -71,19 +74,10 @@ export default function ParkingReportPage() {
           <ParkingCircle size={22} className="text-indigo-600" />
           <h1 className="text-xl font-semibold tracking-tight">{t('report.title', 'Báo cáo bãi đỗ xe')}</h1>
         </div>
-        <Select value={parkingCode} onValueChange={setParkingCode}>
-          <SelectTrigger className="h-9 w-[200px]">
-            <SelectValue placeholder={t('report.selectTenant', 'Chọn bãi đỗ')} />
-          </SelectTrigger>
-          <SelectContent>
-            {tenants.map((tenant) => (
-              <SelectItem key={tenant.parkingCode} value={tenant.parkingCode}>{tenant.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <TenantMultiSelect tenants={tenants} value={parkingCodes} onChange={setParkingCodes} />
       </section>
 
-      {parkingCode && (
+      {parkingCodes.length > 0 && (
         <>
           {/* Row 1: this-month / last-month revenue breakdown + vehicle count */}
           <AsyncState
@@ -173,6 +167,7 @@ export default function ParkingReportPage() {
                 title={t('report.vehicleChartTitle', 'Biểu Đồ Lượt Xe')}
                 data={yearlyChartData}
                 metric="vehicle"
+                pie
                 isLoading={yearlyChartLoading}
                 isError={yearlyChartError}
                 onRetry={refetchYearlyChart}

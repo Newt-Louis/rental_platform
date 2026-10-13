@@ -58,14 +58,15 @@ export interface RevenueVehicleSeriesPoint {
 
 export const parkingDashboardApi = {
   getTenants: () => api.get('/parking-dashboard/tenants').then((r) => r.data),
-  getMonthlySummary: (parkingCode: string) =>
-    api.get('/parking-dashboard/monthly-summary', { params: { parkingCode } }).then((r) => r.data),
-  getRevenueVehicleChartByMonth: (parkingCode: string, year: number) =>
-    api.get('/parking-dashboard/revenue-vehicle-chart-by-month', { params: { parkingCode, year } }).then((r) => r.data),
-  getRevenueVehicleChartByDay: (parkingCode: string, year: number, month: number) =>
-    api.get('/parking-dashboard/revenue-vehicle-chart-by-day', { params: { parkingCode, year, month } }).then((r) => r.data),
-  getRevenueVehicleChartByYear: (parkingCode: string, fromYear: number, toYear: number) =>
-    api.get('/parking-dashboard/revenue-vehicle-chart-by-year', { params: { parkingCode, fromYear, toYear } }).then((r) => r.data),
+  // Charts take one or more bãi; sent as a comma-separated `parkingCodes` and summed server-side.
+  getMonthlySummary: (parkingCodes: string[]) =>
+    api.get('/parking-dashboard/monthly-summary', { params: { parkingCodes: parkingCodes.join(',') } }).then((r) => r.data),
+  getRevenueVehicleChartByMonth: (parkingCodes: string[], year: number) =>
+    api.get('/parking-dashboard/revenue-vehicle-chart-by-month', { params: { parkingCodes: parkingCodes.join(','), year } }).then((r) => r.data),
+  getRevenueVehicleChartByDay: (parkingCodes: string[], year: number, month: number) =>
+    api.get('/parking-dashboard/revenue-vehicle-chart-by-day', { params: { parkingCodes: parkingCodes.join(','), year, month } }).then((r) => r.data),
+  getRevenueVehicleChartByYear: (parkingCodes: string[], fromYear: number, toYear: number) =>
+    api.get('/parking-dashboard/revenue-vehicle-chart-by-year', { params: { parkingCodes: parkingCodes.join(','), fromYear, toYear } }).then((r) => r.data),
   getVoucherTypes: (parkingCode: string) =>
     api.get('/parking-dashboard/voucher-types', { params: { parkingCode } }).then((r) => r.data),
   getTransactionImage: (params: { parkingCode: string; sessionId: string; direction: 'entry' | 'exit'; view?: 'plate' | 'overview' }) =>

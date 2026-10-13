@@ -145,6 +145,17 @@ function unwrapTransactionsPage(page: unknown): { items: ParkingTransactionRow[]
   return { items: payload?.items ?? [], total: payload?.total ?? 0 };
 }
 
+function DateTimeStack({ value }: { value?: string }) {
+  const [time, ...rest] = (value ?? '').split(' ');
+  if (!rest.length) return <>{value || '—'}</>;
+  return (
+    <span className="flex flex-col whitespace-nowrap leading-tight">
+      <span>{time}</span>
+      <span className="text-gray-500">{rest.join(' ')}</span>
+    </span>
+  );
+}
+
 function ParkingImage({ parkingCode, sessionId, direction, enabled }: {
   parkingCode: string;
   sessionId: string;
@@ -319,7 +330,15 @@ export default function ParkingTransactionPage() {
     {
       accessorKey: 'cardCode',
       header: t('transaction.col.cardCode', 'Mã thẻ'),
-      cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue()}</span>,
+      cell: ({ getValue }) => (
+        <span className="flex flex-col whitespace-nowrap leading-tight">
+          {String(getValue() ?? '')
+            .split(/\s*,\s*/)
+            .filter(Boolean)
+            .map((code, i) => <span key={i}>{code}</span>)}
+        </span>
+      ),
+      meta: { fitContent: true },
     },
     {
       id: 'plates',
@@ -339,8 +358,18 @@ export default function ParkingTransactionPage() {
         </span>
       ),
     },
-    { accessorKey: 'entryTime', header: t('transaction.col.entryTime', 'Giờ vào'), meta: { sortField: 'check_in_time' } },
-    { accessorKey: 'exitTime', header: t('transaction.col.exitTime', 'Giờ ra'), meta: { sortField: 'check_out_time' } },
+    {
+      accessorKey: 'entryTime',
+      header: t('transaction.col.entryTime', 'Giờ vào'),
+      cell: ({ getValue }) => <DateTimeStack value={getValue()} />,
+      meta: { sortField: 'check_in_time', fitContent: true },
+    },
+    {
+      accessorKey: 'exitTime',
+      header: t('transaction.col.exitTime', 'Giờ ra'),
+      cell: ({ getValue }) => <DateTimeStack value={getValue()} />,
+      meta: { sortField: 'check_out_time', fitContent: true },
+    },
     { accessorKey: 'durationDisplay', header: t('transaction.col.duration', 'Thời gian đỗ'), meta: { sortField: 'duration' } },
     {
       id: 'voucherType',
@@ -376,6 +405,7 @@ export default function ParkingTransactionPage() {
       accessorKey: 'voucherCode',
       header: t('transaction.col.voucherCode', 'Mã voucher'),
       cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() || '—'}</span>,
+      meta: { fitContent: true },
     },
     { accessorKey: 'cash', header: t('transaction.col.cash', 'Tiền mặt'), cell: ({ getValue }) => fmtVnd(getValue()), meta: { align: 'right' } },
     {

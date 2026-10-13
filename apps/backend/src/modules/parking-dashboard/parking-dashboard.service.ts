@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PrismaParkingService } from '../../prisma-parking/prisma-parking.service';
+import { RedisService } from '../../common/services/redis.service';
 import { Prisma, parking_transactions, tenants } from '../../../node_modules/.prisma/parking-client';
 import {
   ParkingTransactionExportFilterDto,
@@ -89,7 +90,22 @@ export class ParkingDashboardService {
   private static readonly EXPORT_CACHE_DIR = path.join(os.tmpdir(), 'thiso-parking-export-cache');
   private static readonly EXPORT_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 2 weeks
 
-  constructor(private readonly prisma: PrismaParkingService) {}
+  // Chart/summary results cached per bãi in Redis (no-op when REDIS_URL is unset), so any
+  // multi-select combination reuses each lot's cached slice.
+  private static readonly CHART_CACHE_TTL_SECONDS = 30 * 60;
+
+  constructor(
+    private readonly prisma: PrismaParkingService,
+    private readonly redis: RedisService,
+  ) {}
+
+  private async cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const hit = await this.redis.getJson<T>(key);
+    if (hit) return hit;
+    const value = await load();
+    await this.redis.setJson(key, value, ParkingDashboardService.CHART_CACHE_TTL_SECONDS);
+    return value;
+  }
 
   private ensureConfigured() {
     if (!this.prisma.isConfigured) {
@@ -131,9 +147,78 @@ export class ParkingDashboardService {
     return (vehicleTypeId != null && vehicleTypeNames.get(String(vehicleTypeId))) || rawName || 'Khác';
   }
 
+  // ---- Multi-tenant wrappers: run the single-tenant query per bãi (each prunes to its own
+  // partition) in parallel and sum. Series from every tenant share identical buckets.
+  private uniqueCodes(parkingCodes: string[]): string[] {
+    const codes = Array.from(new Set(parkingCodes));
+    if (codes.length === 0) throw new BadRequestException('Cần chọn ít nhất một bãi đỗ xe');
+    return codes;
+  }
+
+  private sumSeries(all: RevenueVehicleSeriesPoint[][]): RevenueVehicleSeriesPoint[] {
+    const [first, ...rest] = all;
+    return first.map((p, i) => {
+      const merged: RevenueVehicleSeriesPoint = { ...p, vehicleCountByType: { ...p.vehicleCountByType } };
+      for (const series of rest) {
+        const q = series[i];
+        merged.totalRevenue += q.totalRevenue;
+        merged.cashRevenue += q.cashRevenue;
+        merged.onlineRevenue += q.onlineRevenue;
+        merged.voucherRevenue += q.voucherRevenue;
+        merged.vehicleCount += q.vehicleCount;
+        for (const [type, n] of Object.entries(q.vehicleCountByType)) {
+          merged.vehicleCountByType[type] = (merged.vehicleCountByType[type] ?? 0) + n;
+        }
+      }
+      return merged;
+    });
+  }
+
+  async getMonthlySummary(parkingCodes: string[]): Promise<{ currentMonth: MonthlyBucket; previousMonth: MonthlyBucket }> {
+    const results = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
+      this.cached(`parking:chart:v1:summary:${c}`, () => this.getMonthlySummaryOne(c)),
+    ));
+    const sum = (pick: (r: (typeof results)[number]) => MonthlyBucket): MonthlyBucket =>
+      results.reduce<MonthlyBucket>(
+        (acc, r) => {
+          const b = pick(r);
+          return {
+            cash: acc.cash + b.cash,
+            online: acc.online + b.online,
+            voucher: acc.voucher + b.voucher,
+            total: acc.total + b.total,
+            vehicleCount: acc.vehicleCount + b.vehicleCount,
+          };
+        },
+        { cash: 0, online: 0, voucher: 0, total: 0, vehicleCount: 0 },
+      );
+    return { currentMonth: sum((r) => r.currentMonth), previousMonth: sum((r) => r.previousMonth) };
+  }
+
+  async getRevenueVehicleChartByMonth(parkingCodes: string[], year: number): Promise<RevenueVehicleSeriesPoint[]> {
+    const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
+      this.cached(`parking:chart:v1:month:${c}:${year}`, () => this.getRevenueVehicleChartByMonthOne(c, year)),
+    ));
+    return this.sumSeries(all);
+  }
+
+  async getRevenueVehicleChartByDay(parkingCodes: string[], year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
+    const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
+      this.cached(`parking:chart:v1:day:${c}:${year}-${month}`, () => this.getRevenueVehicleChartByDayOne(c, year, month)),
+    ));
+    return this.sumSeries(all);
+  }
+
+  async getRevenueVehicleChartByYear(parkingCodes: string[], fromYear: number, toYear: number): Promise<RevenueVehicleSeriesPoint[]> {
+    const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
+      this.cached(`parking:chart:v1:year:${c}:${fromYear}-${toYear}`, () => this.getRevenueVehicleChartByYearOne(c, fromYear, toYear)),
+    ));
+    return this.sumSeries(all);
+  }
+
   // Calendar this-month vs last-month totals, cash/online/voucher + vehicle count, in one
   // CASE WHEN GROUP BY query instead of two separate round trips.
-  async getMonthlySummary(parkingCode: string): Promise<{ currentMonth: MonthlyBucket; previousMonth: MonthlyBucket }> {
+  private async getMonthlySummaryOne(parkingCode: string): Promise<{ currentMonth: MonthlyBucket; previousMonth: MonthlyBucket }> {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(parkingCode);
 
@@ -175,7 +260,7 @@ export class ParkingDashboardService {
 
   // Revenue (total + cash/online/voucher split) and vehicle count, bucketed by calendar
   // month within one year, filled to all 12 months.
-  async getRevenueVehicleChartByMonth(parkingCode: string, year: number): Promise<RevenueVehicleSeriesPoint[]> {
+  private async getRevenueVehicleChartByMonthOne(parkingCode: string, year: number): Promise<RevenueVehicleSeriesPoint[]> {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(parkingCode);
     const start = new Date(year, 0, 1);
@@ -238,7 +323,7 @@ export class ParkingDashboardService {
   }
 
   // Same shape as the monthly chart, bucketed by day within one month, filled to every day.
-  async getRevenueVehicleChartByDay(parkingCode: string, year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
+  private async getRevenueVehicleChartByDayOne(parkingCode: string, year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(parkingCode);
     const start = new Date(year, month - 1, 1);
@@ -302,7 +387,7 @@ export class ParkingDashboardService {
 
   // Same shape as the monthly chart, bucketed by calendar year across a range instead.
   // fromYear/toYear are swapped if reversed and the span is capped at 15 years.
-  async getRevenueVehicleChartByYear(
+  private async getRevenueVehicleChartByYearOne(
     parkingCode: string,
     fromYearIn: number,
     toYearIn: number,

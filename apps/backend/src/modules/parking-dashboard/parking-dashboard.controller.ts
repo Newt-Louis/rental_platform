@@ -32,27 +32,27 @@ export class ParkingDashboardController {
 
   @Get('monthly-summary')
   @ApiOperation({ summary: 'Doanh thu & lượt xe tháng này / tháng trước (theo tháng dương lịch)' })
-  @ApiQuery({ name: 'parkingCode', required: true })
+  @ApiQuery({ name: 'parkingCodes', required: true, description: 'Một hoặc nhiều mã bãi, phân tách bằng dấu phẩy' })
   monthlySummary(@Query() filter: ParkingMonthlySummaryFilterDto) {
-    return this.parkingService.getMonthlySummary(filter.parkingCode);
+    return this.parkingService.getMonthlySummary(filter.parkingCodes);
   }
 
   @Get('revenue-vehicle-chart-by-month')
   @ApiOperation({ summary: 'Doanh thu & lượt xe theo tháng trong một năm' })
   revenueVehicleChartByMonth(@Query() filter: ParkingMonthlyChartFilterDto) {
-    return this.parkingService.getRevenueVehicleChartByMonth(filter.parkingCode, filter.year);
+    return this.parkingService.getRevenueVehicleChartByMonth(filter.parkingCodes, filter.year);
   }
 
   @Get('revenue-vehicle-chart-by-day')
   @ApiOperation({ summary: 'Doanh thu & lượt xe theo ngày trong một tháng' })
   revenueVehicleChartByDay(@Query() filter: ParkingDailyChartFilterDto) {
-    return this.parkingService.getRevenueVehicleChartByDay(filter.parkingCode, filter.year, filter.month);
+    return this.parkingService.getRevenueVehicleChartByDay(filter.parkingCodes, filter.year, filter.month);
   }
 
   @Get('revenue-vehicle-chart-by-year')
   @ApiOperation({ summary: 'Doanh thu & lượt xe theo năm, trong một khoảng năm' })
   revenueVehicleChartByYear(@Query() filter: ParkingYearlyChartFilterDto) {
-    return this.parkingService.getRevenueVehicleChartByYear(filter.parkingCode, filter.fromYear, filter.toYear);
+    return this.parkingService.getRevenueVehicleChartByYear(filter.parkingCodes, filter.fromYear, filter.toYear);
   }
 
   @Get('tenants')

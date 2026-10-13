@@ -51,6 +51,25 @@ export function DataTable<TData>({
     setColWidths(widths);
   }, [colWidths, data.length]);
 
+  // Frozen widths are measured once; widen fitContent columns when later data has longer values.
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  useLayoutEffect(() => {
+    if (colWidths == null || !tbodyRef.current) return;
+    const next = [...colWidths];
+    let changed = false;
+    table.getVisibleLeafColumns().forEach((col, i) => {
+      if (!col.columnDef.meta?.fitContent) return;
+      tbodyRef.current!.querySelectorAll<HTMLElement>(`tr > td:nth-child(${i + 1})`).forEach((td) => {
+        const needed = td.scrollWidth + 12;
+        if (needed > next[i]) {
+          next[i] = needed;
+          changed = true;
+        }
+      });
+    });
+    if (changed) setColWidths(next);
+  }, [data, colWidths, table]);
+
   return (
     <>
       <table className={cn('w-full text-sm', colWidths && 'table-fixed')}>
@@ -88,7 +107,7 @@ export function DataTable<TData>({
             </tr>
           ))}
         </thead>
-        <tbody>
+        <tbody ref={tbodyRef}>
           {table.getRowModel().rows.map((row, rowIndex) => (
             <Fragment key={row.id}>
               <tr className="border-b last:border-0 hover:bg-gray-50">
@@ -124,5 +143,6 @@ declare module '@tanstack/react-table' {
   interface ColumnMeta<TData, TValue> {
     align?: 'left' | 'right' | 'center';
     sortField?: string;
+    fitContent?: boolean;
   }
 }
