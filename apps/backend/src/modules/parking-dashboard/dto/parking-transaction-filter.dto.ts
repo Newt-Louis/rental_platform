@@ -1,6 +1,7 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -113,23 +114,26 @@ export class ParkingTransactionExportFilterDto {
   endDate!: string;
 }
 
-export class ParkingMonthlySummaryFilterDto {
-  @IsString() @MinLength(1) @MaxLength(50)
-  parkingCode!: string;
+// Dashboard charts accept several bãi at once: `parkingCodes=A,B` (or repeated params).
+export class ParkingCodesQueryDto {
+  @Transform(({ value }) =>
+    (Array.isArray(value) ? value : String(value ?? '').split(','))
+      .map((c: string) => c.trim())
+      .filter(Boolean),
+  )
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50)
+  @IsString({ each: true }) @MaxLength(50, { each: true })
+  parkingCodes!: string[];
 }
 
-export class ParkingMonthlyChartFilterDto {
-  @IsString() @MinLength(1) @MaxLength(50)
-  parkingCode!: string;
+export class ParkingMonthlySummaryFilterDto extends ParkingCodesQueryDto {}
 
+export class ParkingMonthlyChartFilterDto extends ParkingCodesQueryDto {
   @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
   year!: number;
 }
 
-export class ParkingDailyChartFilterDto {
-  @IsString() @MinLength(1) @MaxLength(50)
-  parkingCode!: string;
-
+export class ParkingDailyChartFilterDto extends ParkingCodesQueryDto {
   @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
   year!: number;
 
@@ -137,9 +141,7 @@ export class ParkingDailyChartFilterDto {
   month!: number;
 }
 
-export class ParkingYearlyChartFilterDto {
-  @IsString() @MinLength(1) @MaxLength(50)
-  parkingCode!: string;
+export class ParkingYearlyChartFilterDto extends ParkingCodesQueryDto {
 
   @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
   fromYear!: number;
