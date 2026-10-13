@@ -60,8 +60,11 @@ export function DataTable<TData>({
     table.getVisibleLeafColumns().forEach((col, i) => {
       if (!col.columnDef.meta?.fitContent) return;
       tbodyRef.current!.querySelectorAll<HTMLElement>(`tr > td:nth-child(${i + 1})`).forEach((td) => {
-        const needed = td.scrollWidth + 12;
-        if (needed > next[i]) {
+        const inner = td.firstElementChild as HTMLElement | null;
+        if (!inner) return;
+        const cs = getComputedStyle(td);
+        const needed = Math.ceil(inner.scrollWidth + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight));
+        if (needed > next[i] + 1) {
           next[i] = needed;
           changed = true;
         }
