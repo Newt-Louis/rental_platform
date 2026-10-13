@@ -20,9 +20,8 @@ export function TenantMultiSelect({ tenants, value, onChange }: TenantMultiSelec
   const allSelected = tenants.length > 0 && value.length === tenants.length;
 
   function toggle(code: string) {
-    const next = value.includes(code) ? value.filter((c) => c !== code) : [...value, code];
-    // Keep at least one bãi selected — the charts need a tenant to query.
-    if (next.length > 0) onChange(next);
+    // Empty selection is allowed so the user can clear the only lot and pick another.
+    onChange(value.includes(code) ? value.filter((c) => c !== code) : [...value, code]);
   }
 
   const label =
@@ -46,7 +45,7 @@ export function TenantMultiSelect({ tenants, value, onChange }: TenantMultiSelec
         <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium hover:bg-muted">
           <Checkbox
             checked={allSelected}
-            onCheckedChange={(c) => onChange(c ? tenants.map((x) => x.parkingCode) : value.slice(0, 1))}
+            onCheckedChange={(c) => onChange(c ? tenants.map((x) => x.parkingCode) : [])}
           />
           {t('report.allTenants', 'Tất cả bãi đỗ')}
         </label>

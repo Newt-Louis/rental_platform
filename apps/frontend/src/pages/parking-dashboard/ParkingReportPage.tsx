@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { parkingDashboardApi } from '@/api';
@@ -27,9 +27,14 @@ export default function ParkingReportPage() {
     queryFn: () => parkingDashboardApi.getTenants(),
   });
   const tenants: { parkingCode: string; name: string }[] = tenantsRes?.data ?? tenantsRes ?? [];
+  // Default to the first lot once on load only — later the user may clear the selection to switch lots.
+  const defaulted = useRef(false);
   useEffect(() => {
-    if (parkingCodes.length === 0 && tenants.length > 0) setParkingCodes([tenants[0].parkingCode]);
-  }, [tenants, parkingCodes]);
+    if (!defaulted.current && tenants.length > 0) {
+      defaulted.current = true;
+      setParkingCodes([tenants[0].parkingCode]);
+    }
+  }, [tenants]);
 
   const {
     data: summaryRes,
@@ -76,6 +81,10 @@ export default function ParkingReportPage() {
         </div>
         <TenantMultiSelect tenants={tenants} value={parkingCodes} onChange={setParkingCodes} />
       </section>
+
+      {parkingCodes.length === 0 && (
+        <p className="py-10 text-center text-sm text-gray-400">{t('report.pickTenant', 'Chọn ít nhất một bãi đỗ để xem báo cáo')}</p>
+      )}
 
       {parkingCodes.length > 0 && (
         <>

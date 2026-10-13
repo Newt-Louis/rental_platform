@@ -278,6 +278,14 @@ export default function ParkingTransactionPage() {
   });
   const voucherTypeOptions: string[] = voucherTypesRes?.data ?? voucherTypesRes ?? [];
 
+  // Voucher types are per lot; a selection from another lot can't be seen or deselected here.
+  function handleParkingChange(code: string) {
+    if (code === parkingCode) return;
+    setParkingCode(code);
+    setDrawerForm((f) => ({ ...f, voucherTypeNames: [] }));
+    setAppliedDrawer((f) => ({ ...f, voucherTypeNames: [] }));
+  }
+
   function applyFilters() {
     setAppliedDrawer(drawerForm);
     setDrawerOpen(false);
@@ -483,7 +491,7 @@ export default function ParkingTransactionPage() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500">{t('transaction.parkingLot', 'Bãi đỗ')}</Label>
-              <Select value={parkingCode} onValueChange={setParkingCode}>
+              <Select value={parkingCode} onValueChange={handleParkingChange}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>

@@ -75,6 +75,8 @@ export interface RevenueVehicleSeriesPoint {
   label: string;
   bucketKey: string;
   totalRevenue: number;
+  // total_fee of exits with no cash, bank transfer or promotion recorded (payment data missing).
+  otherRevenue: number;
   cashRevenue: number;
   onlineRevenue: number;
   voucherRevenue: number;
@@ -169,6 +171,7 @@ export class ParkingDashboardService {
       for (const series of rest) {
         const q = series[i];
         merged.totalRevenue += q.totalRevenue;
+        merged.otherRevenue += q.otherRevenue;
         merged.cashRevenue += q.cashRevenue;
         merged.onlineRevenue += q.onlineRevenue;
         merged.voucherRevenue += q.voucherRevenue;
@@ -183,7 +186,7 @@ export class ParkingDashboardService {
 
   async getMonthlySummary(parkingCodes: string[]): Promise<{ currentMonth: MonthlyBucket; previousMonth: MonthlyBucket }> {
     const results = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v2:summary:${c}`, () => this.getMonthlySummaryOne(c)),
+      this.cached(`parking:chart:v5:summary:${c}`, () => this.getMonthlySummaryOne(c)),
     ));
     const sum = (pick: (r: (typeof results)[number]) => MonthlyBucket): MonthlyBucket =>
       results.reduce<MonthlyBucket>(
@@ -204,14 +207,14 @@ export class ParkingDashboardService {
 
   async getRevenueVehicleChartByMonth(parkingCodes: string[], year: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v2:month:${c}:${year}`, () => this.getRevenueVehicleChartByMonthOne(c, year)),
+      this.cached(`parking:chart:v5:month:${c}:${year}`, () => this.getRevenueVehicleChartByMonthOne(c, year)),
     ));
     return this.sumSeries(all);
   }
 
   async getRevenueVehicleChartByDay(parkingCodes: string[], year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v2:day:${c}:${year}-${month}`, () => this.getRevenueVehicleChartByDayOne(c, year, month)),
+      this.cached(`parking:chart:v5:day:${c}:${year}-${month}`, () => this.getRevenueVehicleChartByDayOne(c, year, month)),
     ));
     // Current month: drop the not-yet-happened days instead of plotting a zero tail. Done here,
     // after the cache, so cached per-lot series stay full-month and valid across midnight.
@@ -223,7 +226,7 @@ export class ParkingDashboardService {
 
   async getRevenueVehicleChartByYear(parkingCodes: string[], fromYear: number, toYear: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v2:year:${c}:${fromYear}-${toYear}`, () => this.getRevenueVehicleChartByYearOne(c, fromYear, toYear)),
+      this.cached(`parking:chart:v5:year:${c}:${fromYear}-${toYear}`, () => this.getRevenueVehicleChartByYearOne(c, fromYear, toYear)),
     ));
     return this.sumSeries(all);
   }
@@ -246,7 +249,7 @@ export class ParkingDashboardService {
         CASE WHEN check_out_time >= ${thisMonthStart} THEN 'current' ELSE 'previous' END AS period,
         COALESCE(SUM(cash_amount), 0) AS cash,
         COALESCE(SUM(bank_transfer_amount), 0) AS online,
-        COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+        COALESCE(SUM(ABS(COALESCE(promotion_amount, 0))), 0) AS voucher,
         COALESCE(SUM(total_fee), 0) AS total,
         COUNT(*)::bigint AS count
       FROM parking_transactions
@@ -279,13 +282,14 @@ export class ParkingDashboardService {
     const end = vnMonthStart(year + 1, 0);
 
     const rows = await this.prisma.$queryRaw<Array<{
-      month: Date; cash: number; online: number; voucher: number; total: number; count: bigint;
+      month: Date; cash: number; online: number; voucher: number; total: number; other: number; count: bigint;
     }>>`
       SELECT date_trunc('month', check_out_time + interval '7 hours') AS month,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
-             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(ABS(COALESCE(promotion_amount, 0))), 0) AS voucher,
              COALESCE(SUM(total_fee), 0) AS total,
+             COALESCE(SUM(total_fee) FILTER (WHERE COALESCE(cash_amount, 0) = 0 AND COALESCE(bank_transfer_amount, 0) = 0 AND COALESCE(promotion_amount, 0) = 0), 0) AS other,
              COUNT(*)::bigint AS count
       FROM parking_transactions
       WHERE tenant_id = ${tenant.tenant_id}
@@ -324,6 +328,7 @@ export class ParkingDashboardService {
         label: formatMonth(new Date(year, m, 1)),
         bucketKey: `${year}-${String(m + 1).padStart(2, '0')}`,
         totalRevenue: toNumber(r?.total),
+        otherRevenue: toNumber(r?.other),
         cashRevenue: toNumber(r?.cash),
         onlineRevenue: toNumber(r?.online),
         voucherRevenue: toNumber(r?.voucher),
@@ -343,13 +348,14 @@ export class ParkingDashboardService {
     const daysInMonth = new Date(year, month, 0).getDate();
 
     const rows = await this.prisma.$queryRaw<Array<{
-      day: number; cash: number; online: number; voucher: number; total: number; count: bigint;
+      day: number; cash: number; online: number; voucher: number; total: number; other: number; count: bigint;
     }>>`
       SELECT EXTRACT(DAY FROM check_out_time + interval '7 hours')::int AS day,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
-             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(ABS(COALESCE(promotion_amount, 0))), 0) AS voucher,
              COALESCE(SUM(total_fee), 0) AS total,
+             COALESCE(SUM(total_fee) FILTER (WHERE COALESCE(cash_amount, 0) = 0 AND COALESCE(bank_transfer_amount, 0) = 0 AND COALESCE(promotion_amount, 0) = 0), 0) AS other,
              COUNT(*)::bigint AS count
       FROM parking_transactions
       WHERE tenant_id = ${tenant.tenant_id}
@@ -387,6 +393,7 @@ export class ParkingDashboardService {
         label: String(d),
         bucketKey: `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
         totalRevenue: toNumber(r?.total),
+        otherRevenue: toNumber(r?.other),
         cashRevenue: toNumber(r?.cash),
         onlineRevenue: toNumber(r?.online),
         voucherRevenue: toNumber(r?.voucher),
@@ -413,13 +420,14 @@ export class ParkingDashboardService {
     const end = vnMonthStart(toYear + 1, 0);
 
     const rows = await this.prisma.$queryRaw<Array<{
-      yr: number; cash: number; online: number; voucher: number; total: number; count: bigint;
+      yr: number; cash: number; online: number; voucher: number; total: number; other: number; count: bigint;
     }>>`
       SELECT EXTRACT(YEAR FROM check_out_time + interval '7 hours')::int AS yr,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
-             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(ABS(COALESCE(promotion_amount, 0))), 0) AS voucher,
              COALESCE(SUM(total_fee), 0) AS total,
+             COALESCE(SUM(total_fee) FILTER (WHERE COALESCE(cash_amount, 0) = 0 AND COALESCE(bank_transfer_amount, 0) = 0 AND COALESCE(promotion_amount, 0) = 0), 0) AS other,
              COUNT(*)::bigint AS count
       FROM parking_transactions
       WHERE tenant_id = ${tenant.tenant_id}
@@ -457,6 +465,7 @@ export class ParkingDashboardService {
         label: String(y),
         bucketKey: String(y),
         totalRevenue: toNumber(r?.total),
+        otherRevenue: toNumber(r?.other),
         cashRevenue: toNumber(r?.cash),
         onlineRevenue: toNumber(r?.online),
         voucherRevenue: toNumber(r?.voucher),
@@ -524,7 +533,17 @@ export class ParkingDashboardService {
       distinct: ['voucher_type_name'],
       orderBy: { voucher_type_name: 'asc' },
     });
-    return rows.map((r) => r.voucher_type_name as string).filter(Boolean);
+    const names = rows.map((r) => r.voucher_type_name as string).filter((n) => n?.trim());
+    const hasBillPromotion = await this.prisma.parking_transactions.findFirst({
+      where: {
+        tenant_id: tenant.tenant_id,
+        voucher_bill_amount: { gt: 0 },
+        OR: [{ voucher_type_name: null }, { voucher_type_name: '' }],
+      },
+      select: { parking_session_id: true },
+    });
+    if (hasBillPromotion && !names.includes(BILL_PROMOTION_VOUCHER_TYPE)) names.push(BILL_PROMOTION_VOUCHER_TYPE);
+    return names.sort((a, b) => a.localeCompare(b));
   }
 
   async getTransactionsV2(filter: ParkingTransactionFilterV2Dto) {
@@ -592,7 +611,17 @@ export class ParkingDashboardService {
       });
     }
     if (filter.voucherTypeNames?.length) {
-      where.voucher_type_name = { in: filter.voucherTypeNames };
+      // Bill promotions carry no voucher_type_name and are shown as BILL_PROMOTION_VOUCHER_TYPE.
+      const names = filter.voucherTypeNames.filter((n) => n !== BILL_PROMOTION_VOUCHER_TYPE);
+      const or: Prisma.parking_transactionsWhereInput[] = [];
+      if (names.length) or.push({ voucher_type_name: { in: names } });
+      if (filter.voucherTypeNames.includes(BILL_PROMOTION_VOUCHER_TYPE)) {
+        or.push({
+          voucher_bill_amount: { gt: 0 },
+          OR: [{ voucher_type_name: null }, { voucher_type_name: '' }],
+        });
+      }
+      and.push({ OR: or });
     }
     if (filter.promotionType === 'NONE') {
       and.push(
@@ -917,6 +946,8 @@ const PARKING_IMAGE_BASE_URL: Record<string, string> = {
   HVkrxUsp: 'http://113.164.29.122:9191/images/',
 };
 
+const BILL_PROMOTION_VOUCHER_TYPE = 'Emart';
+
 function mapTransactionRow(
   row: parking_transactions,
   parkingCode: string,
@@ -934,7 +965,7 @@ function mapTransactionRow(
     entryTime: row.check_in_time,
     exitTime: row.check_out_time,
     totalTime: row.duration,
-    voucherTypeName: row.voucher_type_name,
+    voucherTypeName: row.voucher_type_name?.trim() || (toNumber(row.voucher_bill_amount) > 0 ? BILL_PROMOTION_VOUCHER_TYPE : null),
     voucherCode: row.voucher_coupon_code ?? row.voucher_bill_number,
     voucherValue: toNumber(row.voucher_coupon_amount) + toNumber(row.voucher_bill_amount),
     parkingFee: toNumber(row.parking_fee),

@@ -49,6 +49,7 @@ export interface RevenueVehicleSeriesPoint {
   label: string;
   bucketKey: string;
   totalRevenue: number;
+  otherRevenue: number;
   cashRevenue: number;
   onlineRevenue: number;
   voucherRevenue: number;

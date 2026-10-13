@@ -29,7 +29,7 @@ export function RevenueVehicleLineChart({ title, data, metric, isLoading, isErro
   // "missing lines" rather than "no data". Treat all-zero as empty so the empty state shows.
   const hasValues =
     metric === 'revenue'
-      ? data.some((p) => p.totalRevenue !== 0 || p.cashRevenue !== 0 || p.onlineRevenue !== 0 || p.voucherRevenue !== 0)
+      ? data.some((p) => p.totalRevenue !== 0 || p.otherRevenue !== 0 || p.cashRevenue !== 0 || p.onlineRevenue !== 0 || p.voucherRevenue !== 0)
       : data.some((p) => p.vehicleCount !== 0);
 
   // Union of vehicle types across all buckets, sorted for stable colors. Skip the breakdown
@@ -69,8 +69,8 @@ export function RevenueVehicleLineChart({ title, data, metric, isLoading, isErro
           loading={<Skeleton className="h-64" />}
         >
           {metric === 'revenue' ? (
-            // "Khác", not "Tổng": total_fee doesn't derive from cash/online/voucher, so
-            // calling it "Total" read as a discrepancy when they don't sum to it.
+            // "Khác" = total_fee of exits with no cash / bank transfer / promotion recorded
+            // (otherRevenue), i.e. fees with no payment data — not the overall total_fee.
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={data}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -78,7 +78,7 @@ export function RevenueVehicleLineChart({ title, data, metric, isLoading, isErro
                 <YAxis tickFormatter={fmtVnd} width={70} tick={{ fontSize: 12 }} />
                 <Tooltip formatter={(v: number) => fmtVnd(v)} />
                 <Legend />
-                <Line type="monotone" dataKey="totalRevenue" name={t('report.other', 'Khác')} stroke={SERIES_COLORS.total} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="otherRevenue" name={t('report.other', 'Khác')} stroke={SERIES_COLORS.total} strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="cashRevenue" name={t('report.cash', 'Tiền Mặt')} stroke={SERIES_COLORS.cash} strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="onlineRevenue" name={t('report.online', 'Online')} stroke={SERIES_COLORS.online} strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="voucherRevenue" name={t('report.voucher', 'Voucher')} stroke={SERIES_COLORS.voucher} strokeWidth={2} dot={false} />
