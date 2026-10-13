@@ -43,6 +43,7 @@
     "entryImage": "Entry Image",
     "exitImage": "Exit Image",
     "noImage": "No image",
+    "timeMode": { "label": "Filter by", "checkin": "Entered", "checkout": "Exited", "all": "All" },
     "dataIncomplete": "Parking data not completed",
     "close": "Close",
     "onlinePayment": "Online",

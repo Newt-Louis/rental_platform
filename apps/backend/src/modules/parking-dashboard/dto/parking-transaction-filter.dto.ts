@@ -17,6 +17,9 @@ import {
 const TRANSACTION_SORT_FIELDS = ['check_in_time', 'check_out_time', 'total_fee', 'duration'] as const;
 export type ParkingTransactionSortField = (typeof TRANSACTION_SORT_FIELDS)[number];
 
+const TIME_MODES = ['checkin', 'checkout', 'all'] as const;
+export type ParkingTimeMode = (typeof TIME_MODES)[number];
+
 const PROMOTION_TYPES = ['NONE', 'BILL', 'VOUCHER'] as const;
 export type ParkingPromotionType = (typeof PROMOTION_TYPES)[number];
 
@@ -35,6 +38,9 @@ export class ParkingTransactionFilterV2Dto {
 
   @IsOptional() @IsString() @MaxLength(50)
   search?: string;
+
+  @IsOptional() @IsIn(TIME_MODES)
+  timeMode?: ParkingTimeMode = 'checkin';
 
   @IsOptional() @IsIn(PROMOTION_TYPES)
   promotionType?: ParkingPromotionType;

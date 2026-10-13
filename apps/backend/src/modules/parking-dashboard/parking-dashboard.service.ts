@@ -588,11 +588,18 @@ export class ParkingDashboardService {
     end: Date,
     filter: ParkingTransactionFilterV2Dto,
   ): Prisma.parking_transactionsWhereInput {
-    const where: Prisma.parking_transactionsWhereInput = {
-      tenant_id: tenantId,
-      check_in_time: { gte: start, lt: end },
-    };
+    const where: Prisma.parking_transactionsWhereInput = { tenant_id: tenantId };
     const and: Prisma.parking_transactionsWhereInput[] = [];
+
+    const inRange = { gte: start, lt: end };
+    const timeMode = filter.timeMode ?? 'checkin';
+    if (timeMode === 'checkout') {
+      where.check_out_time = inRange;
+    } else if (timeMode === 'all') {
+      and.push({ OR: [{ check_in_time: inRange }, { check_out_time: inRange }] });
+    } else {
+      where.check_in_time = inRange;
+    }
 
     if (filter.laneId != null) {
       and.push({ OR: [{ check_in_lane_id: filter.laneId }, { check_out_lane_id: filter.laneId }] });
@@ -709,7 +716,7 @@ export class ParkingDashboardService {
   }
 
   private exportCachePath(parkingCode: string, startDate: string, endDate: string): string {
-    const key = crypto.createHash('sha1').update(`${parkingCode}|${startDate}|${endDate}`).digest('hex');
+    const key = crypto.createHash('sha1').update(`v2|${parkingCode}|${startDate}|${endDate}`).digest('hex');
     return path.join(ParkingDashboardService.EXPORT_CACHE_DIR, `export-${key}.xlsx`);
   }
 
@@ -811,24 +818,33 @@ export class ParkingDashboardService {
     overviewSheet.commit();
 
     const detailSheet = workbook.addWorksheet('ReportParkingHistory');
+    const moneyFmt = '#,##0';
+    const dateTimeFmt = 'dd/mm/yyyy hh:mm:ss';
     detailSheet.columns = [
       { header: 'STT', key: 'stt', width: 6 },
       { header: 'Mã', key: 'recordId', width: 12 },
       { header: 'Loại Xe', key: 'vehicleTypeName', width: 14 },
-      { header: 'Mã Thẻ', key: 'cardCode', width: 14 },
+      { header: 'Mã Thẻ', key: 'cardCode', width: 14, style: { alignment: { wrapText: true, vertical: 'top' } } },
       { header: 'Biển Số Vào', key: 'entryLicensePlate', width: 14 },
       { header: 'Biển Số Ra', key: 'exitLicensePlate', width: 14 },
-      { header: 'Thời Gian Vào', key: 'entryTime', width: 18 },
-      { header: 'Thời Gian Ra', key: 'exitTime', width: 18 },
-      { header: 'Tổng Thời Gian', key: 'totalTime', width: 14 },
-      { header: 'Loại Voucher', key: 'voucherTypeName', width: 14 },
-      { header: 'Mã Voucher', key: 'voucherCode', width: 14 },
-      { header: 'Giá Trị Voucher', key: 'voucherValue', width: 14 },
-      { header: 'Phí Gửi Xe', key: 'parkingFee', width: 14 },
-      { header: 'Tiền Mặt', key: 'cash', width: 14 },
-      { header: 'Ngân Lượng', key: 'bankTransfer', width: 14 },
-      { header: 'Tổng Thu', key: 'totalAmount', width: 14 },
-      { header: 'Khuyến Mãi', key: 'promotion', width: 14 },
+      { header: 'Thời Gian Vào', key: 'entryTime', width: 20, style: { numFmt: dateTimeFmt } },
+      { header: 'Thời Gian Ra', key: 'exitTime', width: 20, style: { numFmt: dateTimeFmt } },
+      { header: 'Thời Gian Đỗ', key: 'durationDisplay', width: 14 },
+      { header: 'Loại Voucher', key: 'voucherTypeName', width: 16 },
+      { header: 'Mã Voucher', key: 'voucherCode', width: 16 },
+      { header: 'Số HĐ Voucher', key: 'voucherBillNumber', width: 16 },
+      { header: 'Công Ty (HĐ)', key: 'voucherBillCompany', width: 22 },
+      { header: 'Giá Trị Voucher HĐ', key: 'voucherBillAmount', width: 16, style: { numFmt: moneyFmt } },
+      { header: 'Mã Coupon', key: 'voucherCouponCode', width: 16 },
+      { header: 'Công Ty (Coupon)', key: 'voucherCouponCompany', width: 22 },
+      { header: 'Giá Trị Coupon', key: 'voucherCouponAmount', width: 16, style: { numFmt: moneyFmt } },
+      { header: 'Giá Trị Voucher', key: 'voucherValue', width: 16, style: { numFmt: moneyFmt } },
+      { header: 'Phí Gửi Xe', key: 'parkingFee', width: 14, style: { numFmt: moneyFmt } },
+      { header: 'Tiền Mặt', key: 'cash', width: 14, style: { numFmt: moneyFmt } },
+      { header: 'Chuyển Khoản', key: 'bankTransfer', width: 14, style: { numFmt: moneyFmt } },
+      { header: 'Thanh Toán Online', key: 'isOnlinePayment', width: 16 },
+      { header: 'Tổng Thu', key: 'totalAmount', width: 14, style: { numFmt: moneyFmt } },
+      { header: 'Khuyến Mãi', key: 'promotion', width: 14, style: { numFmt: moneyFmt } },
     ];
 
     let stt = 0;
@@ -844,7 +860,17 @@ export class ParkingDashboardService {
       });
       for (const r of dayRows) {
         stt += 1;
-        detailSheet.addRow({ stt, ...mapTransactionRow(r, tenant.tenant_code, vehicleTypeNames) }).commit();
+        const m = mapTransactionRow(r, tenant.tenant_code, vehicleTypeNames);
+        detailSheet
+          .addRow({
+            stt,
+            ...m,
+            cardCode: (m.cardCode ?? '').split(/\s*,\s*/).filter(Boolean).join('\n'),
+            durationDisplay: formatDurationHms(r.duration),
+            ...m.promotionDetail,
+            isOnlinePayment: m.isOnlinePayment ? 'Online' : '',
+          })
+          .commit();
       }
       this.logger.log(
         `EXPORT_DEBUG day=${dayStart.toISOString().slice(0, 10)} rows=${dayRows.length} runningTotal=${stt} rssMb=${Math.round(process.memoryUsage().rss / 1024 / 1024)}`,

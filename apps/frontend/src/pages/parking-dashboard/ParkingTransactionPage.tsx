@@ -109,6 +109,7 @@ interface ParkingTransactionRow {
 }
 
 const emptyDrawerFilter: TransactionFilterState = {
+  timeMode: 'checkin',
   startDate: yesterdayIso(),
   endDate: todayIso(),
   search: '',
@@ -227,6 +228,7 @@ export default function ParkingTransactionPage() {
       promotionType: appliedDrawer.promotionType || undefined,
       paymentStatus: splitCsv(appliedDrawer.paymentStatus),
       invoiceStatus: splitCsv(appliedDrawer.invoiceStatus),
+      timeMode: appliedDrawer.timeMode,
       voucherTypeNames: appliedDrawer.voucherTypeNames.length ? appliedDrawer.voucherTypeNames : undefined,
       sortBy: sort.field as any,
       sortDir: sort.dir,
@@ -513,6 +515,22 @@ export default function ParkingTransactionPage() {
                 placeholder={t('transaction.dateRange', 'Khoảng ngày')}
                 showTime
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-500">{t('transaction.timeMode.label', 'Lọc theo')}</Label>
+              <Select
+                value={drawerForm.timeMode}
+                onValueChange={(v) => setDrawerForm((f) => ({ ...f, timeMode: v as TransactionFilterState['timeMode'] }))}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="checkin">{t('transaction.timeMode.checkin', 'Vào bãi')}</SelectItem>
+                  <SelectItem value="checkout">{t('transaction.timeMode.checkout', 'Đã ra khỏi bãi')}</SelectItem>
+                  <SelectItem value="all">{t('transaction.timeMode.all', 'Tất cả')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <Label className="text-xs text-gray-500">
