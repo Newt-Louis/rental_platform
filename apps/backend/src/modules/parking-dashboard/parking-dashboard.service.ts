@@ -716,7 +716,7 @@ export class ParkingDashboardService {
   }
 
   private exportCachePath(parkingCode: string, startDate: string, endDate: string): string {
-    const key = crypto.createHash('sha1').update(`v5|${parkingCode}|${startDate}|${endDate}`).digest('hex');
+    const key = crypto.createHash('sha1').update(`v7|${parkingCode}|${startDate}|${endDate}`).digest('hex');
     return path.join(ParkingDashboardService.EXPORT_CACHE_DIR, `export-${key}.xlsx`);
   }
 
@@ -819,7 +819,7 @@ export class ParkingDashboardService {
 
     const detailSheet = workbook.addWorksheet('ReportParkingHistory');
     const moneyFmt = '#,##0';
-    const dateTimeFmt = 'dd/mm/yyyy" - "hh:mm:ss';
+    const dateTimeFmt = 'dd/mm/yyyy hh:mm:ss';
     detailSheet.columns = [
       { header: 'STT', key: 'stt', width: 6 },
       { header: 'Mã', key: 'recordId', width: 12 },
@@ -920,9 +920,9 @@ function dayRange(startDate: string, endDate: string): { start: Date; end: Date 
   return { start, end };
 }
 
-function formatDurationDhms(minutes: number | null): string {
-  if (minutes == null) return '--:--:--:--';
-  const totalSeconds = Math.round(minutes * 60);
+function formatDurationDhms(seconds: number | null): string {
+  if (seconds == null) return '--:--:--:--';
+  const totalSeconds = Math.round(seconds);
   const d = Math.floor(totalSeconds / 86400);
   const h = Math.floor((totalSeconds % 86400) / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
@@ -930,9 +930,9 @@ function formatDurationDhms(minutes: number | null): string {
   return [d, h, m, sec].map((n) => String(n).padStart(2, '0')).join(':');
 }
 
-function formatDurationHms(minutes: number | null): string {
-  if (minutes == null) return '--:--:--';
-  const totalSeconds = Math.round(minutes * 60);
+function formatDurationHms(seconds: number | null): string {
+  if (seconds == null) return '--:--:--';
+  const totalSeconds = Math.round(seconds);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
