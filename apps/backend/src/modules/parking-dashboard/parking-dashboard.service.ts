@@ -716,7 +716,7 @@ export class ParkingDashboardService {
   }
 
   private exportCachePath(parkingCode: string, startDate: string, endDate: string): string {
-    const key = crypto.createHash('sha1').update(`v3|${parkingCode}|${startDate}|${endDate}`).digest('hex');
+    const key = crypto.createHash('sha1').update(`v4|${parkingCode}|${startDate}|${endDate}`).digest('hex');
     return path.join(ParkingDashboardService.EXPORT_CACHE_DIR, `export-${key}.xlsx`);
   }
 
@@ -819,7 +819,7 @@ export class ParkingDashboardService {
 
     const detailSheet = workbook.addWorksheet('ReportParkingHistory');
     const moneyFmt = '#,##0';
-    const dateTimeFmt = 'dd/mm/yyyy hh:mm:ss';
+    const dateTimeFmt = 'dd/mm/yyyy" - "hh:mm:ss';
     detailSheet.columns = [
       { header: 'STT', key: 'stt', width: 6 },
       { header: 'Mã', key: 'recordId', width: 12 },
