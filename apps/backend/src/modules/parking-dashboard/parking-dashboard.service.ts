@@ -57,6 +57,12 @@ function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 
+// Parking timestamps are naive UTC; a VN calendar month starts at 00:00 +07:00 = 17:00 UTC the
+// previous day. Built from Date.UTC so it doesn't depend on the server's TZ.
+function vnMonthStart(year: number, monthIndex: number): Date {
+  return new Date(Date.UTC(year, monthIndex, 1) - 7 * 60 * 60 * 1000);
+}
+
 export interface MonthlyBucket {
   cash: number;
   online: number;
@@ -93,6 +99,7 @@ export class ParkingDashboardService {
   // Chart/summary results cached per bãi in Redis (no-op when REDIS_URL is unset), so any
   // multi-select combination reuses each lot's cached slice.
   private static readonly CHART_CACHE_TTL_SECONDS = 30 * 60;
+  // v2: day/month/year buckets moved from UTC days to VN (+07:00) days.
 
   constructor(
     private readonly prisma: PrismaParkingService,
@@ -176,7 +183,7 @@ export class ParkingDashboardService {
 
   async getMonthlySummary(parkingCodes: string[]): Promise<{ currentMonth: MonthlyBucket; previousMonth: MonthlyBucket }> {
     const results = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v1:summary:${c}`, () => this.getMonthlySummaryOne(c)),
+      this.cached(`parking:chart:v2:summary:${c}`, () => this.getMonthlySummaryOne(c)),
     ));
     const sum = (pick: (r: (typeof results)[number]) => MonthlyBucket): MonthlyBucket =>
       results.reduce<MonthlyBucket>(
@@ -197,21 +204,26 @@ export class ParkingDashboardService {
 
   async getRevenueVehicleChartByMonth(parkingCodes: string[], year: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v1:month:${c}:${year}`, () => this.getRevenueVehicleChartByMonthOne(c, year)),
+      this.cached(`parking:chart:v2:month:${c}:${year}`, () => this.getRevenueVehicleChartByMonthOne(c, year)),
     ));
     return this.sumSeries(all);
   }
 
   async getRevenueVehicleChartByDay(parkingCodes: string[], year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v1:day:${c}:${year}-${month}`, () => this.getRevenueVehicleChartByDayOne(c, year, month)),
+      this.cached(`parking:chart:v2:day:${c}:${year}-${month}`, () => this.getRevenueVehicleChartByDayOne(c, year, month)),
     ));
-    return this.sumSeries(all);
+    // Current month: drop the not-yet-happened days instead of plotting a zero tail. Done here,
+    // after the cache, so cached per-lot series stay full-month and valid across midnight.
+    const vnNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const isCurrentMonth = vnNow.getUTCFullYear() === year && vnNow.getUTCMonth() + 1 === month;
+    const series = this.sumSeries(all);
+    return isCurrentMonth ? series.slice(0, vnNow.getUTCDate()) : series;
   }
 
   async getRevenueVehicleChartByYear(parkingCodes: string[], fromYear: number, toYear: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v1:year:${c}:${fromYear}-${toYear}`, () => this.getRevenueVehicleChartByYearOne(c, fromYear, toYear)),
+      this.cached(`parking:chart:v2:year:${c}:${fromYear}-${toYear}`, () => this.getRevenueVehicleChartByYearOne(c, fromYear, toYear)),
     ));
     return this.sumSeries(all);
   }
@@ -263,13 +275,13 @@ export class ParkingDashboardService {
   private async getRevenueVehicleChartByMonthOne(parkingCode: string, year: number): Promise<RevenueVehicleSeriesPoint[]> {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(parkingCode);
-    const start = new Date(year, 0, 1);
-    const end = new Date(year + 1, 0, 1);
+    const start = vnMonthStart(year, 0);
+    const end = vnMonthStart(year + 1, 0);
 
     const rows = await this.prisma.$queryRaw<Array<{
       month: Date; cash: number; online: number; voucher: number; total: number; count: bigint;
     }>>`
-      SELECT date_trunc('month', check_out_time) AS month,
+      SELECT date_trunc('month', check_out_time + interval '7 hours') AS month,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
              COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
@@ -285,7 +297,7 @@ export class ParkingDashboardService {
     const typeRows = await this.prisma.$queryRaw<Array<{
       month: Date; vehicle_type_id: number | null; vehicle_type_name: string | null; count: bigint;
     }>>`
-      SELECT date_trunc('month', check_out_time) AS month,
+      SELECT date_trunc('month', check_out_time + interval '7 hours') AS month,
              vehicle_type_id, vehicle_type_name,
              COUNT(*)::bigint AS count
       FROM parking_transactions
@@ -295,10 +307,10 @@ export class ParkingDashboardService {
     `;
 
     const vehicleTypeNames = await this.loadVehicleTypeNames(tenant.tenant_id);
-    const byMonth = new Map(rows.map((r) => [new Date(r.month).getMonth(), r]));
+    const byMonth = new Map(rows.map((r) => [new Date(r.month).getUTCMonth(), r]));
     const typeByMonth = new Map<number, Record<string, number>>();
     for (const r of typeRows) {
-      const m = new Date(r.month).getMonth();
+      const m = new Date(r.month).getUTCMonth();
       const label = this.resolveVehicleTypeLabel(vehicleTypeNames, r.vehicle_type_id, r.vehicle_type_name);
       const byType = typeByMonth.get(m) ?? {};
       byType[label] = (byType[label] ?? 0) + toNumber(r.count);
@@ -326,14 +338,14 @@ export class ParkingDashboardService {
   private async getRevenueVehicleChartByDayOne(parkingCode: string, year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(parkingCode);
-    const start = new Date(year, month - 1, 1);
-    const end = new Date(year, month, 1);
+    const start = vnMonthStart(year, month - 1);
+    const end = vnMonthStart(year, month);
     const daysInMonth = new Date(year, month, 0).getDate();
 
     const rows = await this.prisma.$queryRaw<Array<{
       day: number; cash: number; online: number; voucher: number; total: number; count: bigint;
     }>>`
-      SELECT EXTRACT(DAY FROM check_out_time)::int AS day,
+      SELECT EXTRACT(DAY FROM check_out_time + interval '7 hours')::int AS day,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
              COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
@@ -349,7 +361,7 @@ export class ParkingDashboardService {
     const typeRows = await this.prisma.$queryRaw<Array<{
       day: number; vehicle_type_id: number | null; vehicle_type_name: string | null; count: bigint;
     }>>`
-      SELECT EXTRACT(DAY FROM check_out_time)::int AS day,
+      SELECT EXTRACT(DAY FROM check_out_time + interval '7 hours')::int AS day,
              vehicle_type_id, vehicle_type_name,
              COUNT(*)::bigint AS count
       FROM parking_transactions
@@ -397,13 +409,13 @@ export class ParkingDashboardService {
     const fromYear = Math.min(fromYearIn, toYearIn);
     const toYearRaw = Math.max(fromYearIn, toYearIn);
     const toYear = Math.min(toYearRaw, fromYear + 14);
-    const start = new Date(fromYear, 0, 1);
-    const end = new Date(toYear + 1, 0, 1);
+    const start = vnMonthStart(fromYear, 0);
+    const end = vnMonthStart(toYear + 1, 0);
 
     const rows = await this.prisma.$queryRaw<Array<{
       yr: number; cash: number; online: number; voucher: number; total: number; count: bigint;
     }>>`
-      SELECT EXTRACT(YEAR FROM check_out_time)::int AS yr,
+      SELECT EXTRACT(YEAR FROM check_out_time + interval '7 hours')::int AS yr,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
              COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
@@ -419,7 +431,7 @@ export class ParkingDashboardService {
     const typeRows = await this.prisma.$queryRaw<Array<{
       yr: number; vehicle_type_id: number | null; vehicle_type_name: string | null; count: bigint;
     }>>`
-      SELECT EXTRACT(YEAR FROM check_out_time)::int AS yr,
+      SELECT EXTRACT(YEAR FROM check_out_time + interval '7 hours')::int AS yr,
              vehicle_type_id, vehicle_type_name,
              COUNT(*)::bigint AS count
       FROM parking_transactions
