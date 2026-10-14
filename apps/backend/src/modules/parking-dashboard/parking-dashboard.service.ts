@@ -100,6 +100,8 @@ export class ParkingDashboardService {
 
   // Chart/summary results cached per bãi in Redis (no-op when REDIS_URL is unset), so any
   // multi-select combination reuses each lot's cached slice.
+  private static readonly VOUCHER_TYPE_DISCOVERY_DAYS = 7;
+  private static readonly VOUCHER_TYPE_SYNC_INTERVAL_MS = 10 * 60 * 1000;
   private static readonly CHART_CACHE_TTL_SECONDS = 30 * 60;
   // v2: day/month/year buckets moved from UTC days to VN (+07:00) days.
 
@@ -524,26 +526,100 @@ export class ParkingDashboardService {
     return { buffer, contentType };
   }
 
-  async getVoucherTypeNames(parkingCode: string) {
+  // Request path only reads: Redis first, then the voucher_types table. A DB error here is
+  // logged and yields an empty list instead of failing the call. Discovering new types from
+  // transactions and upserting them runs in the background (see syncVoucherTypes).
+  async getVoucherTypeNames(parkingCode: string): Promise<string[]> {
     this.ensureConfigured();
+    const cacheKey = `parking:voucher-types:v1:${parkingCode}`;
+    const hit = await this.redis.getJson<string[]>(cacheKey);
+    if (hit?.length) {
+      this.triggerVoucherTypeSync(parkingCode);
+      return hit;
+    }
+
+    let names: string[] = [];
+    try {
+      const tenant = await this.resolveTenant(parkingCode);
+      const rows = await this.prisma.voucher_types.findMany({
+        where: { tenant_id: tenant.tenant_id },
+        select: { name: true },
+      });
+      names = rows.map((r) => r.name).sort((x, y) => x.localeCompare(y));
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      this.logger.warn(`voucher-types read failed (${parkingCode}): ${(error as Error).message}`);
+    }
+    if (names.length) {
+      await this.redis.setJson(cacheKey, names, ParkingDashboardService.CHART_CACHE_TTL_SECONDS);
+    }
+    this.triggerVoucherTypeSync(parkingCode);
+    return names;
+  }
+
+  private readonly voucherTypeSyncRunning = new Set<string>();
+  private readonly voucherTypeLastSync = new Map<string, number>();
+
+  // Fire-and-forget: never awaited by the request, never throws.
+  private triggerVoucherTypeSync(parkingCode: string): void {
+    const last = this.voucherTypeLastSync.get(parkingCode) ?? 0;
+    if (this.voucherTypeSyncRunning.has(parkingCode) || Date.now() - last < ParkingDashboardService.VOUCHER_TYPE_SYNC_INTERVAL_MS) {
+      return;
+    }
+    this.voucherTypeSyncRunning.add(parkingCode);
+    this.voucherTypeLastSync.set(parkingCode, Date.now());
+    void this.syncVoucherTypes(parkingCode)
+      .catch((error) => this.logger.warn(`voucher-types sync failed (${parkingCode}): ${(error as Error).message}`))
+      .finally(() => this.voucherTypeSyncRunning.delete(parkingCode));
+  }
+
+  private async syncVoucherTypes(parkingCode: string): Promise<void> {
+    const flagKey = `parking:voucher-types-sync:v1:${parkingCode}`;
+    if (await this.redis.getJson<boolean>(flagKey)) return; // another instance synced recently
+    await this.redis.setJson(flagKey, true, ParkingDashboardService.VOUCHER_TYPE_SYNC_INTERVAL_MS / 1000);
+
     const tenant = await this.resolveTenant(parkingCode);
+    const known = await this.prisma.voucher_types.findMany({
+      where: { tenant_id: tenant.tenant_id },
+      select: { name: true },
+    });
+    const knownNames = new Set(known.map((k) => k.name));
+
+    // Empty table: one full scan to seed. Otherwise only the recent, index-friendly window.
+    const since = known.length
+      ? new Date(Date.now() - ParkingDashboardService.VOUCHER_TYPE_DISCOVERY_DAYS * 24 * 60 * 60 * 1000)
+      : undefined;
+    const timeFilter = since ? { check_in_time: { gte: since } } : {};
+
     const rows = await this.prisma.parking_transactions.findMany({
-      where: { tenant_id: tenant.tenant_id, voucher_type_name: { not: null } },
+      where: { tenant_id: tenant.tenant_id, voucher_type_name: { not: null }, ...timeFilter },
       select: { voucher_type_name: true },
       distinct: ['voucher_type_name'],
-      orderBy: { voucher_type_name: 'asc' },
     });
-    const names = rows.map((r) => r.voucher_type_name as string).filter((n) => n?.trim());
+    const found = new Set(rows.map((r) => r.voucher_type_name?.trim() ?? '').filter(Boolean));
+
     const hasBillPromotion = await this.prisma.parking_transactions.findFirst({
       where: {
         tenant_id: tenant.tenant_id,
         voucher_bill_amount: { gt: 0 },
         OR: [{ voucher_type_name: null }, { voucher_type_name: '' }],
+        ...timeFilter,
       },
       select: { parking_session_id: true },
     });
-    if (hasBillPromotion && !names.includes(BILL_PROMOTION_VOUCHER_TYPE)) names.push(BILL_PROMOTION_VOUCHER_TYPE);
-    return names.sort((a, b) => a.localeCompare(b));
+    if (hasBillPromotion) found.add(BILL_PROMOTION_VOUCHER_TYPE);
+
+    const missing = [...found].filter((n) => !knownNames.has(n));
+    if (missing.length) {
+      await this.prisma.voucher_types.createMany({
+        data: missing.map((name) => ({ tenant_id: tenant.tenant_id, name })),
+        skipDuplicates: true,
+      });
+    }
+    const all = [...new Set([...knownNames, ...found])].sort((x, y) => x.localeCompare(y));
+    if (all.length) {
+      await this.redis.setJson(`parking:voucher-types:v1:${parkingCode}`, all, ParkingDashboardService.CHART_CACHE_TTL_SECONDS);
+    }
   }
 
   async getTransactionsV2(filter: ParkingTransactionFilterV2Dto) {

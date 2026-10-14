@@ -15,6 +15,7 @@ model tenants {
   name                  String
   description           String?
   vehicle_type_mappings vehicle_type_mappings[]
+  voucher_types         voucher_types[]
 }
 
 model vehicle_type_mappings {
@@ -96,4 +97,14 @@ model parking_transactions {
   synced_at                     DateTime  @default(now()) @db.Timestamp(6)
 
   @@id([tenant_id, parking_session_id])
+}
+
+model voucher_types {
+  id           Int      @id @default(autoincrement())
+  tenant_id    Int
+  name         String   @db.VarChar(100)
+  created_at   DateTime @default(now()) @db.Timestamp(6)
+  tenants      tenants  @relation(fields: [tenant_id], references: [tenant_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenant_id, name], map: "uq_voucher_types_tenant_name")
 }

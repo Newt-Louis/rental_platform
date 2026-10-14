@@ -277,6 +277,14 @@ export default function ParkingTransactionPage() {
     queryKey: ['parking-voucher-types', parkingCode],
     queryFn: () => parkingDashboardApi.getVoucherTypes(parkingCode),
     enabled: !!parkingCode,
+    // An empty list means the server is still seeding; refetch next time instead of caching it.
+    staleTime: (query) => {
+      const d = query.state.data as { data?: string[] } | string[] | undefined;
+      const list = Array.isArray(d) ? d : d?.data;
+      return list?.length ? 30 * 60_000 : 0;
+    },
+    gcTime: 24 * 60 * 60_000,
+    refetchOnWindowFocus: false,
   });
   const voucherTypeOptions: string[] = voucherTypesRes?.data ?? voucherTypesRes ?? [];
 
