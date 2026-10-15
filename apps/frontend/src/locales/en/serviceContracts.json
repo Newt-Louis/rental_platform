@@ -30,6 +30,8 @@
   "lifecycle": "Contract lifecycle",
   "documents": "Contract documents",
   "upload": "Upload",
+  "fileUploadExceedsLimit": "Reach maximum upload file size",
+  "incorrectTimeFormat": "Incorrect time format",
   "noDocuments": "No documents",
   "history": "History",
   "payments": "Payments",

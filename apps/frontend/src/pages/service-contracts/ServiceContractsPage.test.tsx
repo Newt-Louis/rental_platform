@@ -9,9 +9,14 @@ import {
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import ServiceContractsPage from "./ServiceContractsPage";
+import ServiceContractsPage, {
+  isServiceContractUploadSizeError,
+  isValidServiceContractIsoDate,
+} from "./ServiceContractsPage";
 import { serviceContractsApi } from "@/api";
 import { openOrDownloadAuthenticatedDocument } from "@/lib/authenticatedDocument";
+import viServiceContracts from "@/locales/vi/serviceContracts.json";
+import enServiceContracts from "@/locales/en/serviceContracts.json";
 
 // Renders the current URL's querystring into the DOM so tests can assert on it directly —
 // MemoryRouter keeps its own in-memory history and never touches window.location.
@@ -28,6 +33,7 @@ function LocationProbe() {
 const mallContext = vi.hoisted(() => ({
   selectedMallId: null as string | null,
 }));
+const toast = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api", () => ({
   serviceContractsApi: {
@@ -63,6 +69,10 @@ vi.mock("@/hooks/usePermission", () => ({
 
 vi.mock("@/lib/authenticatedDocument", () => ({
   openOrDownloadAuthenticatedDocument: vi.fn(),
+}));
+
+vi.mock("@/components/ui/use-toast", () => ({
+  useToast: () => ({ toast }),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -148,6 +158,36 @@ describe("ServiceContractsPage all-mall view", () => {
     } as never);
   });
 
+  it("keeps localized messages for upload-limit and malformed-date feedback", () => {
+    expect(viServiceContracts.fileUploadExceedsLimit).toBe(
+      "File upload vượt giới hạn cho phép",
+    );
+    expect(enServiceContracts.fileUploadExceedsLimit).toBe(
+      "Reach maximum upload file size",
+    );
+    expect(viServiceContracts.incorrectTimeFormat).toBe("Sai định dạng thời gian");
+    expect(enServiceContracts.incorrectTimeFormat).toBe("Incorrect time format");
+  });
+
+  it("classifies both reverse-proxy and Multer size-limit errors without classifying ordinary failures", () => {
+    expect(isServiceContractUploadSizeError({ response: { status: 413 } })).toBe(true);
+    expect(isServiceContractUploadSizeError({ code: "LIMIT_FILE_SIZE" })).toBe(true);
+    expect(
+      isServiceContractUploadSizeError({
+        response: { data: { code: "LIMIT_FILE_SIZE" } },
+      }),
+    ).toBe(true);
+    expect(isServiceContractUploadSizeError({ message: "File too large" })).toBe(true);
+    expect(isServiceContractUploadSizeError({ response: { status: 500 } })).toBe(false);
+  });
+
+  it("accepts only real four-digit ISO calendar dates", () => {
+    expect(isValidServiceContractIsoDate("2026-10-15")).toBe(true);
+    expect(isValidServiceContractIsoDate("2026-02-29")).toBe(false);
+    expect(isValidServiceContractIsoDate("333333-01-01")).toBe(false);
+    expect(isValidServiceContractIsoDate("2026/10/15")).toBe(false);
+  });
+
   it("loads contracts and alerts without a mallId while keeping creation mall-specific", async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -178,6 +218,74 @@ describe("ServiceContractsPage all-mall view", () => {
     });
   });
 
+  it("shows the localized time-format message instead of a browser validation bubble for an invalid create date", async () => {
+    mallContext.selectedMallId = "mall-1";
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <ServiceContractsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "create" }));
+    const createForm = screen
+      .getByRole("heading", { name: "Tạo hợp đồng dịch vụ" })
+      .closest("form")!;
+    fireEvent.invalid(within(createForm).getByLabelText(/^Ngày bắt đầu/));
+
+    expect(toast).toHaveBeenCalledWith({
+      title: "incorrectTimeFormat",
+      variant: "destructive",
+    });
+    expect(serviceContractsApi.create).not.toHaveBeenCalled();
+  });
+
+  it("replaces a reverse-proxy upload-size error with the localized message", async () => {
+    const user = userEvent.setup();
+    mallContext.selectedMallId = "mall-1";
+    vi.mocked(serviceContractsApi.upload).mockRejectedValue({
+      response: { status: 413, data: "<html>Request Entity Too Large</html>" },
+    } as never);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/?id=contract-1"]}>
+        <QueryClientProvider client={queryClient}>
+          <ServiceContractsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("dialog", { name: "Hợp đồng bảo trì" });
+    const fileInput = screen.getByLabelText("Upload") as HTMLInputElement;
+    await user.upload(
+      fileInput,
+      new File(["large-contract"], "large-contract.pdf", {
+        type: "application/pdf",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith({
+        title: "fileUploadExceedsLimit",
+        variant: "destructive",
+      }),
+    );
+  });
+
   it("renders contract detail as a top-level drawer and closes it from the backdrop", async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -197,7 +305,9 @@ describe("ServiceContractsPage all-mall view", () => {
     const drawer = await screen.findByRole("dialog", {
       name: "Hợp đồng bảo trì",
     });
-    expect(drawer).toHaveClass("z-[110]", "translate-x-0");
+    await waitFor(() =>
+      expect(drawer).toHaveClass("z-[110]", "translate-x-0"),
+    );
     expect(
       screen.getByLabelText("Kéo giãn chiều rộng khung chi tiết hợp đồng"),
     ).toBeInTheDocument();

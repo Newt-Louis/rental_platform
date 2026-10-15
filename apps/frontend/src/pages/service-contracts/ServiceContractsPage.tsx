@@ -62,6 +62,53 @@ const STATUSES = [
   "RENEWED",
   "CANCELLED",
 ];
+
+type UploadRequestError = {
+  code?: string;
+  message?: unknown;
+  response?: {
+    status?: number;
+    data?:
+      | string
+      | {
+          code?: string;
+          message?: unknown;
+        };
+  };
+};
+
+/**
+ * Date inputs serialize to the API as calendar dates, not JavaScript Date
+ * strings. Keep the four-digit ISO representation strict so browsers that
+ * accept unusually large years cannot send an unintuitive parsed date.
+ */
+export function isValidServiceContractIsoDate(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * A proxy can reject an oversized multipart request before Nest sees it, while
+ * Multer exposes the same condition as LIMIT_FILE_SIZE. Both are one user
+ * outcome and must never leak a raw infrastructure response into the UI.
+ */
+export function isServiceContractUploadSizeError(error: unknown): boolean {
+  const requestError = error as UploadRequestError | undefined;
+  const responseData = requestError?.response?.data;
+  const message =
+    typeof responseData === "string"
+      ? responseData
+      : responseData?.message ?? requestError?.message;
+  return (
+    requestError?.response?.status === 413 ||
+    requestError?.code === "LIMIT_FILE_SIZE" ||
+    (typeof responseData !== "string" && responseData?.code === "LIMIT_FILE_SIZE") ||
+    message === "File too large"
+  );
+}
 // Chỉ được sửa trực tiếp khi hợp đồng chưa vào hiệu lực; từ ACTIVE trở đi phải khóa vì đã ràng buộc pháp lý/tài chính.
 const EDITABLE_STATUSES = [
   "DRAFT",
@@ -559,16 +606,20 @@ export default function ServiceContractsPage() {
       setCreateVAT("0");
       setCreateCurrency("VND");
       if (created?.id) setSelectedId(created.id);
-      toast(
-        uploadError
-          ? {
-              title: "Đã tạo hợp đồng nhưng chưa tải được bản gốc",
-              description:
-                "Hợp đồng đã được lưu. Vui lòng thử tải lại tài liệu trong hồ sơ hợp đồng.",
-              variant: "destructive",
-            }
-          : { title: "Đã tạo hợp đồng dịch vụ và lưu bản gốc" },
-      );
+      if (uploadError && isServiceContractUploadSizeError(uploadError)) {
+        toast({ title: t("fileUploadExceedsLimit"), variant: "destructive" });
+      } else {
+        toast(
+          uploadError
+            ? {
+                title: "Đã tạo hợp đồng nhưng chưa tải được bản gốc",
+                description:
+                  "Hợp đồng đã được lưu. Vui lòng thử tải lại tài liệu trong hồ sơ hợp đồng.",
+                variant: "destructive",
+              }
+            : { title: "Đã tạo hợp đồng dịch vụ và lưu bản gốc" },
+        );
+      }
     },
     onError: (e: any) =>
       toast({
@@ -657,6 +708,14 @@ export default function ServiceContractsPage() {
     const data = Object.fromEntries(
       Object.entries(raw).filter(([, value]) => value !== ""),
     ) as Record<string, unknown>;
+    if (
+      ["signedDate", "startDate", "endDate"].some(
+        (key) => data[key] !== undefined && !isValidServiceContractIsoDate(data[key]),
+      )
+    ) {
+      toast({ title: t("incorrectTimeFormat"), variant: "destructive" });
+      return;
+    }
     for (const key of [
       "initialValue",
       "VAT",
@@ -679,6 +738,19 @@ export default function ServiceContractsPage() {
       data,
       originalFile: createOriginalFile,
     });
+  }
+  function handleCreateFormInvalid(e: FormEvent<HTMLFormElement>) {
+    const input = e.target as HTMLInputElement;
+    if (
+      input.type === "date" &&
+      ["signedDate", "startDate", "endDate"].includes(input.name)
+    ) {
+      // A browser can reject an overlong year before `onSubmit` fires. Replace
+      // its browser-specific validation bubble with the same locale message
+      // used by the submit-time guard above.
+      e.preventDefault();
+      toast({ title: t("incorrectTimeFormat"), variant: "destructive" });
+    }
   }
   function submitEdit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -723,6 +795,10 @@ export default function ServiceContractsPage() {
       refresh();
       toast({ title: "Đã lưu tài liệu hợp đồng" });
     } catch (e: any) {
+      if (isServiceContractUploadSizeError(e)) {
+        toast({ title: t("fileUploadExceedsLimit"), variant: "destructive" });
+        return;
+      }
       toast({
         title: "Không thể tải tài liệu",
         description:
@@ -1091,6 +1167,7 @@ export default function ServiceContractsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
             onSubmit={submit}
+            onInvalid={handleCreateFormInvalid}
             className="flex max-h-[92vh] w-full max-w-4xl flex-col gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl"
           >
             <div className="flex justify-between border-b pb-4">
@@ -2084,6 +2161,7 @@ function ContractOperations({
   canTransferToBilling: boolean;
 }) {
   const { toast } = useToast();
+  const { t } = useTranslation("serviceContracts");
   const [tab, setTab] = useState("payments");
   const [payment, setPayment] = useState({
     milestone: "",
@@ -2114,6 +2192,10 @@ function ContractOperations({
       toast({ title: message });
       return true;
     } catch (e: any) {
+      if (isServiceContractUploadSizeError(e)) {
+        toast({ title: t("fileUploadExceedsLimit"), variant: "destructive" });
+        return false;
+      }
       toast({
         title: "Không thể thực hiện",
         description: e?.response?.data?.message,

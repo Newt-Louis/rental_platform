@@ -30,6 +30,8 @@
   "lifecycle": "Vòng đời hợp đồng",
   "documents": "Tài liệu hợp đồng",
   "upload": "Upload",
+  "fileUploadExceedsLimit": "File upload vượt giới hạn cho phép",
+  "incorrectTimeFormat": "Sai định dạng thời gian",
   "noDocuments": "Chưa có tài liệu",
   "history": "Lịch sử",
   "payments": "Thanh toán",
